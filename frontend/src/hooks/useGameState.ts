@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { GameState, Message, Character, Location } from '../types/game';
+import { GameState, Message, Character, Location, PlayerState } from '../types/game';
 import { useApi } from './useApi';
 
 const initialState: GameState = {
@@ -266,6 +266,51 @@ export const useGameState = () => {
     [api]
   );
 
+  const updatePlayerProfile = useCallback(
+    async (profile: Partial<PlayerState>) => {
+      // Build markdown content from profile
+      const content = `# Character
+Name: ${profile.name || ''}
+Role: ${profile.role || profile.class || ''}
+
+# Appearance
+${profile.appearance || '(Not yet described)'}
+
+# Background
+${profile.background || '(Not yet written)'}
+
+# Personality
+${profile.personality || '(Not yet defined)'}
+
+# Goals
+${profile.goals || '(Not yet set)'}
+
+# Skills
+${profile.skills || '(Not yet defined)'}
+
+# Inventory
+${gameState.playerState.inventory.map(i => `- ${i.name}`).join('\n') || '- Basic supplies'}
+
+# Quest Log
+${gameState.playerState.quests.map(q => `- [${q.completed ? 'x' : ' '}] ${q.title}`).join('\n') || '(No quests yet)'}
+
+# Notes
+${gameState.playerState.notes.map(n => `- ${n}`).join('\n') || '(No notes yet)'}
+
+# Relationships
+${profile.relationships || '(No relationships yet)'}
+`;
+      const success = await api.updatePlayerState(content);
+      if (success) {
+        setGameState((prev) => ({
+          ...prev,
+          playerState: { ...prev.playerState, ...profile },
+        }));
+      }
+    },
+    [api, gameState.playerState]
+  );
+
   return {
     gameState,
     // Game messaging
@@ -275,6 +320,7 @@ export const useGameState = () => {
     // Player
     addPlayerNote,
     updatePlayerImage,
+    updatePlayerProfile,
     // Characters
     addCharacter,
     updateCharacter,

@@ -6,6 +6,7 @@ import { CharacterList } from './CharacterList';
 import { CharacterEditor } from './CharacterEditor';
 import { LocationList } from './LocationList';
 import { LocationEditor } from './LocationEditor';
+import { PlayerProfileEditor } from './PlayerProfileEditor';
 
 interface SidePanelProps {
   playerState: PlayerState;
@@ -17,6 +18,7 @@ interface SidePanelProps {
   onAddLocation: (location: Partial<Location>) => Promise<Location | null>;
   onUpdateLocation: (id: string, location: Partial<Location>) => Promise<Location | null>;
   onDeleteLocation: (id: string) => Promise<boolean>;
+  onUpdatePlayerProfile: (profile: Partial<PlayerState>) => Promise<void>;
   onGenerateCharacterContent: (name: string, existing?: string) => Promise<any>;
   onGenerateLocationContent: (name: string, existing?: string) => Promise<any>;
   onGenerateImage: (prompt: string, category?: string, id?: string) => Promise<any>;
@@ -35,6 +37,7 @@ export const SidePanel: React.FC<SidePanelProps> = ({
   onAddLocation,
   onUpdateLocation,
   onDeleteLocation,
+  onUpdatePlayerProfile,
   onGenerateCharacterContent,
   onGenerateLocationContent,
   onGenerateImage,
@@ -45,6 +48,7 @@ export const SidePanel: React.FC<SidePanelProps> = ({
   const [isCharacterEditorOpen, setIsCharacterEditorOpen] = useState(false);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
   const [isLocationEditorOpen, setIsLocationEditorOpen] = useState(false);
+  const [isProfileEditorOpen, setIsProfileEditorOpen] = useState(false);
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'inventory', label: 'Items' },
@@ -134,6 +138,20 @@ export const SidePanel: React.FC<SidePanelProps> = ({
     }
   };
 
+  // Player profile handlers
+  const handleSaveProfile = async (profile: Partial<PlayerState>) => {
+    await onUpdatePlayerProfile(profile);
+    setIsProfileEditorOpen(false);
+  };
+
+  const handleGeneratePlayerImage = async () => {
+    const prompt = `Realistic portrait photo of a person: ${playerState.appearance || playerState.name}. Professional headshot style, neutral background, photorealistic.`;
+    const result = await onGenerateImage(prompt, 'player', 'avatar');
+    if (result?.imageUrl) {
+      await onUpdatePlayerProfile({ ...playerState, imageUrl: result.imageUrl });
+    }
+  };
+
   return (
     <>
       <div className="glass rounded-2xl h-full flex flex-col overflow-hidden shadow-2xl">
@@ -162,7 +180,18 @@ export const SidePanel: React.FC<SidePanelProps> = ({
 
           {activeTab === 'profile' && (
             <div className="p-4 space-y-4">
-              <div className="glass-elevated rounded-xl p-4 text-center">
+              <div className="glass-elevated rounded-xl p-4 text-center relative">
+                {/* Edit Button */}
+                <button
+                  onClick={() => setIsProfileEditorOpen(true)}
+                  className="absolute top-3 right-3 p-2 text-text-secondary hover:text-accent-cyan transition-colors rounded-lg hover:bg-bg-dark/30"
+                  title="Edit Profile"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </button>
+
                 {playerState.imageUrl ? (
                   <img
                     src={playerState.imageUrl}
@@ -227,6 +256,16 @@ export const SidePanel: React.FC<SidePanelProps> = ({
                   </div>
                 </div>
               )}
+
+              {/* Show prompt to edit if profile is empty */}
+              {!playerState.appearance && !playerState.background && !playerState.personality && !playerState.goals && (
+                <button
+                  onClick={() => setIsProfileEditorOpen(true)}
+                  className="w-full py-3 border-2 border-dashed border-accent-cyan/30 rounded-xl text-text-secondary hover:text-accent-cyan hover:border-accent-cyan/50 transition-all text-sm"
+                >
+                  + Add character details
+                </button>
+              )}
             </div>
           )}
 
@@ -253,6 +292,16 @@ export const SidePanel: React.FC<SidePanelProps> = ({
           )}
         </div>
       </div>
+
+      {/* Player Profile Editor Modal */}
+      <PlayerProfileEditor
+        player={playerState}
+        isOpen={isProfileEditorOpen}
+        onSave={handleSaveProfile}
+        onCancel={() => setIsProfileEditorOpen(false)}
+        onGenerateImage={handleGeneratePlayerImage}
+        isLoading={isLoading}
+      />
 
       {/* Character Editor Modal */}
       <CharacterEditor

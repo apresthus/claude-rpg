@@ -55,6 +55,7 @@ export const App: React.FC = () => {
     addLocation,
     updateLocation,
     removeLocation,
+    updatePlayerProfile,
     generateCharacterContent,
     generateLocationContent,
     generateImage,
@@ -99,6 +100,7 @@ export const App: React.FC = () => {
               onAddLocation={addLocation}
               onUpdateLocation={updateLocation}
               onDeleteLocation={removeLocation}
+              onUpdatePlayerProfile={updatePlayerProfile}
               onGenerateCharacterContent={generateCharacterContent}
               onGenerateLocationContent={generateLocationContent}
               onGenerateImage={generateImage}
