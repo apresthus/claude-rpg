@@ -1,0 +1,31 @@
+# Environment files with secrets
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+backend/build/
+backend/rpg
+frontend/dist/
+frontend/node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Campaign data (optional - uncomment to track campaigns)
+# campaigns/active/
+
+# Dependency directories
+node_modules/
