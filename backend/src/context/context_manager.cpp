@@ -3,21 +3,20 @@
 #include "../util/json.h"
 #include <sys/stat.h>
 #include <cstring>
+#include <fstream>
 
 namespace rpg {
 
-namespace {
-    void create_dirs(const std::string& path) {
-        std::string tmp = path;
-        for (size_t i = 1; i < tmp.size(); ++i) {
-            if (tmp[i] == '/') {
-                tmp[i] = '\0';
-                mkdir(tmp.c_str(), 0755);
-                tmp[i] = '/';
-            }
+void ContextManager::create_dirs(const std::string& path) {
+    std::string tmp = path;
+    for (size_t i = 1; i < tmp.size(); ++i) {
+        if (tmp[i] == '/') {
+            tmp[i] = '\0';
+            mkdir(tmp.c_str(), 0755);
+            tmp[i] = '/';
         }
-        mkdir(tmp.c_str(), 0755);
     }
+    mkdir(tmp.c_str(), 0755);
 }
 
 ContextManager::ContextManager(const std::string& campaign_dir)
@@ -27,14 +26,28 @@ ContextManager::ContextManager(const std::string& campaign_dir)
 
 std::string ContextManager::build_full_context() const {
     std::string ctx;
-    ctx.reserve(16384);
+    ctx.reserve(32768);
 
     ctx += "=== PLOT STATE (SECRET) ===\n";
     ctx += file::read_file(plot_path());
+
+    ctx += "\n\n=== CHARACTERS ===\n";
+    ctx += file::read_file(characters_path());
+
+    ctx += "\n\n=== LOCATIONS ===\n";
+    ctx += file::read_file(locations_path());
+
     ctx += "\n\n=== WORLD & NPC KNOWLEDGE ===\n";
     ctx += file::read_file(context_path());
+
     ctx += "\n\n=== PLAYER STATE (VISIBLE TO PLAYER) ===\n";
     ctx += file::read_file(player_path());
+
+    // Note if player has an image
+    if (image_exists("player", "avatar")) {
+        ctx += "\n[Note: The player character has a visual appearance as described in their profile. ";
+        ctx += "NPCs should react appropriately to their appearance.]\n";
+    }
 
     return ctx;
 }
@@ -53,6 +66,8 @@ void ContextManager::apply_updates(const std::vector<ContextUpdate>& updates) {
         if (update.filename == "plot.md") path = plot_path();
         else if (update.filename == "context.md") path = context_path();
         else if (update.filename == "player.md") path = player_path();
+        else if (update.filename == "characters.md") path = characters_path();
+        else if (update.filename == "locations.md") path = locations_path();
         else continue;
 
         // For now, append the update content
@@ -63,10 +78,15 @@ void ContextManager::apply_updates(const std::vector<ContextUpdate>& updates) {
 }
 
 void ContextManager::init_new_campaign(const std::string& player_name,
-                                        const std::string& player_class) {
+                                        const std::string& player_role) {
+    // Create images directories
+    create_dirs(images_dir() + "/characters");
+    create_dirs(images_dir() + "/locations");
+    create_dirs(images_dir() + "/player");
+
     // Initialize plot.md
     std::string plot = R"(# Current Arc
-The adventure begins...
+The story begins...
 
 # Planted Seeds
 (None yet)
@@ -90,8 +110,23 @@ The adventure begins...
 )";
     file::write_file(context_path(), context);
 
-    // Initialize player.md
-    std::string player = "# Character\nName: " + player_name + "\nClass: " + player_class + R"(
+    // Initialize player.md with enhanced format
+    std::string player = "# Character\nName: " + player_name + "\nRole: " + player_role + R"(
+
+# Appearance
+(Not yet described)
+
+# Background
+(Not yet written)
+
+# Personality
+(Not yet defined)
+
+# Goals
+(Not yet set)
+
+# Skills
+(Not yet defined)
 
 # Inventory
 - Basic supplies
@@ -101,8 +136,25 @@ The adventure begins...
 
 # Notes
 (No notes yet)
+
+# Relationships
+(No relationships yet)
 )";
     file::write_file(player_path(), player);
+
+    // Initialize characters.md
+    std::string characters = R"(# Characters
+
+(No characters created yet)
+)";
+    file::write_file(characters_path(), characters);
+
+    // Initialize locations.md
+    std::string locations = R"(# Locations
+
+(No locations created yet)
+)";
+    file::write_file(locations_path(), locations);
 
     // Initialize empty history
     file::write_file(history_path(), "[]");
@@ -132,6 +184,85 @@ void ContextManager::append_history(const std::string& player_input,
 
 std::string ContextManager::get_history() const {
     return file::read_file(history_path());
+}
+
+std::string ContextManager::get_characters() const {
+    return file::read_file(characters_path());
+}
+
+void ContextManager::save_characters(const std::string& content) {
+    file::write_file(characters_path(), content);
+}
+
+std::string ContextManager::get_locations() const {
+    return file::read_file(locations_path());
+}
+
+void ContextManager::save_locations(const std::string& content) {
+    file::write_file(locations_path(), content);
+}
+
+void ContextManager::save_player_state(const std::string& content) {
+    file::write_file(player_path(), content);
+}
+
+bool ContextManager::save_image(const std::string& category, const std::string& id,
+                                 const std::string& base64_data, const std::string& mime_type) {
+    // Determine file extension from mime type
+    std::string ext = ".png";
+    if (mime_type.find("jpeg") != std::string::npos ||
+        mime_type.find("jpg") != std::string::npos) {
+        ext = ".jpg";
+    } else if (mime_type.find("webp") != std::string::npos) {
+        ext = ".webp";
+    }
+
+    std::string dir = images_dir() + "/" + category;
+    create_dirs(dir);
+    std::string path = dir + "/" + id + ext;
+
+    // Decode base64 and write binary file
+    // Simple base64 decode
+    static const std::string b64_chars =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    std::string decoded;
+    decoded.reserve(base64_data.size() * 3 / 4);
+
+    int val = 0, valb = -8;
+    for (char c : base64_data) {
+        if (c == '=' || c == '\n' || c == '\r') continue;
+        size_t pos = b64_chars.find(c);
+        if (pos == std::string::npos) continue;
+        val = (val << 6) + static_cast<int>(pos);
+        valb += 6;
+        if (valb >= 0) {
+            decoded.push_back(static_cast<char>((val >> valb) & 0xFF));
+            valb -= 8;
+        }
+    }
+
+    std::ofstream out(path, std::ios::binary);
+    if (!out) return false;
+    out.write(decoded.data(), static_cast<std::streamsize>(decoded.size()));
+    return out.good();
+}
+
+std::string ContextManager::get_image_path(const std::string& category, const std::string& id) const {
+    // Check for different extensions
+    std::vector<std::string> exts = {".png", ".jpg", ".webp"};
+    for (const auto& ext : exts) {
+        std::string path = images_dir() + "/" + category + "/" + id + ext;
+        struct stat st;
+        if (stat(path.c_str(), &st) == 0) {
+            return path;
+        }
+    }
+    return "";
+}
+
+bool ContextManager::image_exists(const std::string& category, const std::string& id) const {
+    return !get_image_path(category, id).empty();
 }
 
 }

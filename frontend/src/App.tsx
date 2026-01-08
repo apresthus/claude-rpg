@@ -45,14 +45,28 @@ const ParticleBackground: React.FC = () => {
 };
 
 export const App: React.FC = () => {
-  const { gameState, sendMessage, createNewCampaign, isLoading } = useGameState();
+  const {
+    gameState,
+    sendMessage,
+    createNewCampaign,
+    addCharacter,
+    updateCharacter,
+    removeCharacter,
+    addLocation,
+    updateLocation,
+    removeLocation,
+    generateCharacterContent,
+    generateLocationContent,
+    generateImage,
+    isLoading,
+  } = useGameState();
 
   const handleNewCampaign = async (
     campaignName: string,
     playerName: string,
-    playerClass: string
+    playerRole: string
   ) => {
-    await createNewCampaign(campaignName, playerName, playerClass);
+    await createNewCampaign(campaignName, playerName, playerRole);
   };
 
   return (
@@ -75,7 +89,21 @@ export const App: React.FC = () => {
           </div>
 
           <div className="flex-[4]">
-            <SidePanel playerState={gameState.playerState} />
+            <SidePanel
+              playerState={gameState.playerState}
+              characters={gameState.characters}
+              locations={gameState.locations}
+              onAddCharacter={addCharacter}
+              onUpdateCharacter={updateCharacter}
+              onDeleteCharacter={removeCharacter}
+              onAddLocation={addLocation}
+              onUpdateLocation={updateLocation}
+              onDeleteLocation={removeLocation}
+              onGenerateCharacterContent={generateCharacterContent}
+              onGenerateLocationContent={generateLocationContent}
+              onGenerateImage={generateImage}
+              isLoading={isLoading}
+            />
           </div>
         </div>
       </div>

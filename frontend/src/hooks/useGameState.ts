@@ -1,33 +1,44 @@
 import { useState, useCallback, useEffect } from 'react';
-import { GameState, Message } from '../types/game';
+import { GameState, Message, Character, Location } from '../types/game';
 import { useApi } from './useApi';
 
 const initialState: GameState = {
-  campaignName: 'New Adventure',
+  campaignName: 'New Session',
   messages: [],
   playerState: {
-    name: 'Adventurer',
-    class: 'Wanderer',
+    name: 'Player',
+    class: 'Participant',
+    role: 'Participant',
     inventory: [],
     quests: [],
     notes: [],
   },
   isLoading: false,
+  characters: [],
+  locations: [],
 };
 
 export const useGameState = () => {
   const [gameState, setGameState] = useState<GameState>(initialState);
   const api = useApi();
 
+  // Load initial data
   useEffect(() => {
-    const loadPlayerState = async () => {
-      const playerState = await api.getPlayerState();
-      if (playerState) {
-        setGameState((prev) => ({ ...prev, playerState }));
+    const loadInitialData = async () => {
+      // Load player state
+      const playerResult = await api.getPlayerState();
+      if (playerResult) {
+        setGameState((prev) => ({
+          ...prev,
+          playerState: {
+            ...prev.playerState,
+            ...playerResult.state,
+            imageUrl: playerResult.imageUrl,
+          },
+        }));
       }
-    };
 
-    const loadHistory = async () => {
+      // Load history
       const history = await api.getHistory();
       if (history && history.length > 0) {
         const messages: Message[] = history.flatMap((entry, index) => [
@@ -44,15 +55,22 @@ export const useGameState = () => {
             timestamp: Date.now() - (history.length - index) * 1000 + 500,
           },
         ]);
-
         setGameState((prev) => ({ ...prev, messages }));
       }
+
+      // Load characters
+      const characters = await api.getCharacters();
+      setGameState((prev) => ({ ...prev, characters }));
+
+      // Load locations
+      const locations = await api.getLocations();
+      setGameState((prev) => ({ ...prev, locations }));
     };
 
-    loadPlayerState();
-    loadHistory();
+    loadInitialData();
   }, []);
 
+  // Game messaging
   const sendMessage = useCallback(async (content: string) => {
     const playerMessage: Message = {
       id: `${Date.now()}-player`,
@@ -77,10 +95,15 @@ export const useGameState = () => {
         timestamp: Date.now(),
       };
 
+      // Reload player state to get any updates
+      const playerResult = await api.getPlayerState();
+
       setGameState((prev) => ({
         ...prev,
         messages: [...prev.messages, gmMessage],
-        playerState: { ...prev.playerState, ...response.playerState },
+        playerState: playerResult
+          ? { ...prev.playerState, ...playerResult.state, imageUrl: playerResult.imageUrl }
+          : prev.playerState,
         isLoading: false,
       }));
     } else {
@@ -88,21 +111,25 @@ export const useGameState = () => {
     }
   }, [api]);
 
+  // Campaign management
   const createNewCampaign = useCallback(
-    async (campaignName: string, playerName: string, playerClass: string) => {
-      const success = await api.createCampaign(campaignName, playerName, playerClass);
+    async (campaignName: string, playerName: string, playerRole: string) => {
+      const success = await api.createCampaign(campaignName, playerName, playerRole);
       if (success) {
         setGameState({
           campaignName,
           messages: [],
           playerState: {
             name: playerName,
-            class: playerClass,
+            class: playerRole,
+            role: playerRole,
             inventory: [],
             quests: [],
             notes: [],
           },
           isLoading: false,
+          characters: [],
+          locations: [],
         });
       }
       return success;
@@ -110,6 +137,7 @@ export const useGameState = () => {
     [api]
   );
 
+  // Player notes
   const addPlayerNote = useCallback(
     async (note: string) => {
       const success = await api.addNote(note);
@@ -127,11 +155,141 @@ export const useGameState = () => {
     [api]
   );
 
+  // Characters management
+  const addCharacter = useCallback(
+    async (character: Partial<Character>) => {
+      const created = await api.createCharacter(character);
+      if (created) {
+        setGameState((prev) => ({
+          ...prev,
+          characters: [...prev.characters, created],
+        }));
+      }
+      return created;
+    },
+    [api]
+  );
+
+  const updateCharacter = useCallback(
+    async (id: string, character: Partial<Character>) => {
+      const updated = await api.updateCharacter(id, character);
+      if (updated) {
+        setGameState((prev) => ({
+          ...prev,
+          characters: prev.characters.map((c) => (c.id === id ? updated : c)),
+        }));
+      }
+      return updated;
+    },
+    [api]
+  );
+
+  const removeCharacter = useCallback(
+    async (id: string) => {
+      const success = await api.deleteCharacter(id);
+      if (success) {
+        setGameState((prev) => ({
+          ...prev,
+          characters: prev.characters.filter((c) => c.id !== id),
+        }));
+      }
+      return success;
+    },
+    [api]
+  );
+
+  const refreshCharacters = useCallback(async () => {
+    const characters = await api.getCharacters();
+    setGameState((prev) => ({ ...prev, characters }));
+  }, [api]);
+
+  // Locations management
+  const addLocation = useCallback(
+    async (location: Partial<Location>) => {
+      const created = await api.createLocation(location);
+      if (created) {
+        setGameState((prev) => ({
+          ...prev,
+          locations: [...prev.locations, created],
+        }));
+      }
+      return created;
+    },
+    [api]
+  );
+
+  const updateLocation = useCallback(
+    async (id: string, location: Partial<Location>) => {
+      const updated = await api.updateLocation(id, location);
+      if (updated) {
+        setGameState((prev) => ({
+          ...prev,
+          locations: prev.locations.map((l) => (l.id === id ? updated : l)),
+        }));
+      }
+      return updated;
+    },
+    [api]
+  );
+
+  const removeLocation = useCallback(
+    async (id: string) => {
+      const success = await api.deleteLocation(id);
+      if (success) {
+        setGameState((prev) => ({
+          ...prev,
+          locations: prev.locations.filter((l) => l.id !== id),
+        }));
+      }
+      return success;
+    },
+    [api]
+  );
+
+  const refreshLocations = useCallback(async () => {
+    const locations = await api.getLocations();
+    setGameState((prev) => ({ ...prev, locations }));
+  }, [api]);
+
+  // Player profile update
+  const updatePlayerImage = useCallback(
+    async (imageData: string, mimeType: string) => {
+      const imageUrl = await api.uploadPlayerImage(imageData, mimeType);
+      if (imageUrl) {
+        setGameState((prev) => ({
+          ...prev,
+          playerState: { ...prev.playerState, imageUrl },
+        }));
+      }
+      return imageUrl;
+    },
+    [api]
+  );
+
   return {
     gameState,
+    // Game messaging
     sendMessage,
+    // Campaign
     createNewCampaign,
+    // Player
     addPlayerNote,
+    updatePlayerImage,
+    // Characters
+    addCharacter,
+    updateCharacter,
+    removeCharacter,
+    refreshCharacters,
+    // Locations
+    addLocation,
+    updateLocation,
+    removeLocation,
+    refreshLocations,
+    // AI Generation
+    generateCharacterContent: api.generateCharacterContent,
+    generateLocationContent: api.generateLocationContent,
+    generateImage: api.generateImage,
+    // State
     isLoading: api.isLoading,
     error: api.error,
   };

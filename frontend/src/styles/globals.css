@@ -35,25 +35,25 @@ body {
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, var(--primary-start), var(--primary-end));
+  background: linear-gradient(180deg, var(--accent-cyan), var(--primary-end));
   border-radius: 4px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, var(--primary-end), var(--primary-start));
+  background: linear-gradient(180deg, var(--accent-cyan), var(--accent-emerald));
 }
 
 /* Glassmorphism classes */
 .glass {
-  background: rgba(26, 26, 46, 0.8);
+  background: rgba(30, 41, 59, 0.7);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(124, 58, 237, 0.2);
+  border: 1px solid rgba(71, 85, 105, 0.3);
 }
 
 .glass-elevated {
-  background: rgba(37, 37, 64, 0.9);
+  background: rgba(51, 65, 85, 0.8);
   backdrop-filter: blur(16px);
-  border: 1px solid rgba(124, 58, 237, 0.3);
+  border: 1px solid rgba(100, 116, 139, 0.4);
 }
 
 /* Gradient text */
@@ -69,7 +69,7 @@ body {
   display: inline-block;
   width: 2px;
   height: 1.2em;
-  background: var(--primary-start);
+  background: var(--accent-cyan);
   animation: blink 1s step-end infinite;
 }
 
@@ -91,7 +91,7 @@ body {
   position: absolute;
   width: 4px;
   height: 4px;
-  background: radial-gradient(circle, rgba(124, 58, 237, 0.6) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.4) 0%, transparent 70%);
   border-radius: 50%;
   animation: particle-float linear infinite;
 }
@@ -133,4 +133,20 @@ body {
 
 .btn-glow:hover::before {
   opacity: 0.6;
+}
+
+/* Modal scale-in animation */
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scale-in {
+  animation: scale-in 0.2s ease-out;
 }

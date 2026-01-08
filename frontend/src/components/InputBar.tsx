@@ -32,14 +32,14 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, disabled = false }) 
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={disabled}
-            placeholder="Enter your action..."
-            className="w-full bg-bg-elevated border-2 border-primary-start/30 rounded-xl px-6 py-3 text-text-primary placeholder-text-secondary focus:outline-none focus:border-primary-start focus:ring-4 focus:ring-primary-start/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            placeholder="Type your message..."
+            className="w-full bg-bg-elevated border-2 border-accent-cyan/30 rounded-xl px-6 py-3 text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent-cyan focus:ring-4 focus:ring-accent-cyan/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           />
         </div>
         <button
           onClick={handleSend}
           disabled={disabled || !input.trim()}
-          className="px-8 py-3 rounded-xl font-semibold text-white bg-gradient-to-r from-primary-start to-primary-end hover:from-primary-start/90 hover:to-primary-end/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl disabled:transform-none"
+          className="px-8 py-3 rounded-xl font-semibold text-bg-dark bg-gradient-to-r from-accent-cyan to-accent-emerald hover:from-accent-cyan/90 hover:to-accent-emerald/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl disabled:transform-none"
         >
           Send
         </button>

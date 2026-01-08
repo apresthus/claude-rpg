@@ -47,19 +47,19 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
       <div
         className={`max-w-[80%] rounded-2xl px-6 py-4 ${
           isGM
-            ? 'glass border-l-4 border-l-primary-start shadow-lg'
-            : 'glass-elevated border-r-4 border-r-primary-end shadow-lg'
+            ? 'glass border-l-4 border-l-accent-cyan shadow-lg'
+            : 'glass-elevated border-r-4 border-r-accent-emerald shadow-lg'
         }`}
       >
         <div className="flex items-start gap-3">
           {isGM && (
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-start to-primary-end flex items-center justify-center flex-shrink-0">
-              <span className="text-lg">🎭</span>
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-accent-cyan to-primary-end flex items-center justify-center flex-shrink-0">
+              <span className="text-xs font-bold text-bg-dark">GM</span>
             </div>
           )}
           <div className="flex-1">
             <div className="text-xs text-text-secondary mb-1 font-semibold tracking-wide">
-              {isGM ? 'GAME MASTER' : 'YOU'}
+              {isGM ? 'STORY' : 'YOU'}
             </div>
             <div className="text-text-primary leading-relaxed whitespace-pre-wrap">
               {displayedText}
@@ -67,8 +67,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             </div>
           </div>
           {!isGM && (
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-end to-accent-cyan flex items-center justify-center flex-shrink-0">
-              <span className="text-lg">⚔️</span>
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-accent-emerald to-accent-cyan flex items-center justify-center flex-shrink-0">
+              <span className="text-xs font-bold text-bg-dark">YOU</span>
             </div>
           )}
         </div>

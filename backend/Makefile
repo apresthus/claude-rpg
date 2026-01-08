@@ -8,9 +8,11 @@ SRC_DIR = src
 
 SRCS = $(SRC_DIR)/main.cpp \
        $(SRC_DIR)/api/claude_api.cpp \
+       $(SRC_DIR)/api/gemini_api.cpp \
        $(SRC_DIR)/server/routes.cpp \
        $(SRC_DIR)/context/context_manager.cpp \
-       $(SRC_DIR)/parser/response_parser.cpp
+       $(SRC_DIR)/parser/response_parser.cpp \
+       $(SRC_DIR)/parser/markdown_parser.cpp
 
 OBJS = $(SRCS:$(SRC_DIR)/%.cpp=$(BUILD_DIR)/%.o)
 
