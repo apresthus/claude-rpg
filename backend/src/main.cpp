@@ -40,9 +40,30 @@ int main() {
         routes.handle_player_image(req, res);
     });
 
-    // Campaign
+    // Campaign (legacy)
     svr.Post("/api/campaign/new", [&routes](const httplib::Request& req, httplib::Response& res) {
         routes.handle_new_campaign(req, res);
+    });
+
+    // Roleplays
+    svr.Get("/api/roleplays", [&routes](const httplib::Request& req, httplib::Response& res) {
+        routes.handle_get_roleplays(req, res);
+    });
+
+    svr.Post("/api/roleplays", [&routes](const httplib::Request& req, httplib::Response& res) {
+        routes.handle_create_roleplay(req, res);
+    });
+
+    svr.Put(R"(/api/roleplays/([^/]+)/load)", [&routes](const httplib::Request& req, httplib::Response& res) {
+        routes.handle_load_roleplay(req, res);
+    });
+
+    svr.Delete(R"(/api/roleplays/([^/]+))", [&routes](const httplib::Request& req, httplib::Response& res) {
+        routes.handle_delete_roleplay(req, res);
+    });
+
+    svr.Get("/api/roleplay/current", [&routes](const httplib::Request& req, httplib::Response& res) {
+        routes.handle_get_current_roleplay(req, res);
     });
 
     // Characters CRUD

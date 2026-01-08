@@ -48,7 +48,10 @@ export const App: React.FC = () => {
   const {
     gameState,
     sendMessage,
-    createNewCampaign,
+    createNewRoleplay,
+    switchRoleplay,
+    deleteRoleplay,
+    getRoleplays,
     addCharacter,
     updateCharacter,
     removeCharacter,
@@ -62,22 +65,17 @@ export const App: React.FC = () => {
     isLoading,
   } = useGameState();
 
-  const handleNewCampaign = async (
-    campaignName: string,
-    playerName: string,
-    playerRole: string
-  ) => {
-    await createNewCampaign(campaignName, playerName, playerRole);
-  };
-
   return (
     <div className="h-screen w-screen overflow-hidden bg-bg-dark relative">
       <ParticleBackground />
 
       <div className="relative z-10 h-full flex flex-col">
         <TopBar
-          campaignName={gameState.campaignName}
-          onNewCampaign={handleNewCampaign}
+          currentRoleplay={gameState.currentRoleplay}
+          onNewRoleplay={createNewRoleplay}
+          onSwitchRoleplay={switchRoleplay}
+          onDeleteRoleplay={deleteRoleplay}
+          getRoleplays={getRoleplays}
         />
 
         <div className="flex-1 flex gap-6 p-6 overflow-hidden">

@@ -3,7 +3,7 @@ import { GameState, Message, Character, Location, PlayerState } from '../types/g
 import { useApi } from './useApi';
 
 const initialState: GameState = {
-  campaignName: 'New Session',
+  currentRoleplay: null,
   messages: [],
   playerState: {
     name: 'Player',
@@ -25,6 +25,12 @@ export const useGameState = () => {
   // Load initial data
   useEffect(() => {
     const loadInitialData = async () => {
+      // Load current roleplay metadata
+      const roleplay = await api.getCurrentRoleplay();
+      if (roleplay) {
+        setGameState((prev) => ({ ...prev, currentRoleplay: roleplay }));
+      }
+
       // Load player state
       const playerResult = await api.getPlayerState();
       if (playerResult) {
@@ -111,13 +117,13 @@ export const useGameState = () => {
     }
   }, [api]);
 
-  // Campaign management
-  const createNewCampaign = useCallback(
-    async (campaignName: string, playerName: string, playerRole: string) => {
-      const success = await api.createCampaign(campaignName, playerName, playerRole);
-      if (success) {
+  // Roleplay management
+  const createNewRoleplay = useCallback(
+    async (roleplayName: string, playerName: string, playerRole: string) => {
+      const roleplay = await api.createCampaign(roleplayName, playerName, playerRole);
+      if (roleplay) {
         setGameState({
-          campaignName,
+          currentRoleplay: roleplay,
           messages: [],
           playerState: {
             name: playerName,
@@ -131,11 +137,81 @@ export const useGameState = () => {
           characters: [],
           locations: [],
         });
+        return true;
       }
-      return success;
+      return false;
     },
     [api]
   );
+
+  const switchRoleplay = useCallback(
+    async (id: string) => {
+      const roleplay = await api.loadRoleplay(id);
+      if (roleplay) {
+        // Reload all data for the new roleplay
+        setGameState((prev) => ({
+          ...prev,
+          currentRoleplay: roleplay,
+          messages: [],
+          characters: [],
+          locations: [],
+        }));
+
+        // Load player state
+        const playerResult = await api.getPlayerState();
+        if (playerResult) {
+          setGameState((prev) => ({
+            ...prev,
+            playerState: {
+              ...initialState.playerState,
+              ...playerResult.state,
+              imageUrl: playerResult.imageUrl,
+            },
+          }));
+        }
+
+        // Load history
+        const history = await api.getHistory();
+        if (history && history.length > 0) {
+          const messages: Message[] = history.flatMap((entry, index) => [
+            {
+              id: `${index}-player`,
+              type: 'player' as const,
+              content: entry.player || '',
+              timestamp: Date.now() - (history.length - index) * 1000,
+            },
+            {
+              id: `${index}-gm`,
+              type: 'gm' as const,
+              content: entry.gm || '',
+              timestamp: Date.now() - (history.length - index) * 1000 + 500,
+            },
+          ]);
+          setGameState((prev) => ({ ...prev, messages }));
+        }
+
+        // Load characters and locations
+        const characters = await api.getCharacters();
+        const locations = await api.getLocations();
+        setGameState((prev) => ({ ...prev, characters, locations }));
+
+        return true;
+      }
+      return false;
+    },
+    [api]
+  );
+
+  const deleteRoleplay = useCallback(
+    async (id: string) => {
+      return await api.deleteRoleplay(id);
+    },
+    [api]
+  );
+
+  const getRoleplays = useCallback(async () => {
+    return await api.getRoleplays();
+  }, [api]);
 
   // Player notes
   const addPlayerNote = useCallback(
@@ -315,8 +391,11 @@ ${profile.relationships || '(No relationships yet)'}
     gameState,
     // Game messaging
     sendMessage,
-    // Campaign
-    createNewCampaign,
+    // Roleplay management
+    createNewRoleplay,
+    switchRoleplay,
+    deleteRoleplay,
+    getRoleplays,
     // Player
     addPlayerNote,
     updatePlayerImage,

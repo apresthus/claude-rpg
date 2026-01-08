@@ -19,7 +19,13 @@ public:
     std::string get_system_prompt() const;
 
     void apply_updates(const std::vector<ContextUpdate>& updates);
-    void init_new_campaign(const std::string& player_name, const std::string& player_role);
+    void init_new_campaign(const std::string& roleplay_name,
+                           const std::string& player_name, const std::string& player_role);
+
+    // Metadata management
+    std::string get_metadata() const;
+    void save_metadata(const std::string& json_content);
+    void update_last_played();
 
     void append_history(const std::string& player_input, const std::string& gm_response);
     std::string get_history() const;
@@ -53,6 +59,7 @@ private:
     std::string characters_path() const { return campaign_dir_ + "/characters.md"; }
     std::string locations_path() const { return campaign_dir_ + "/locations.md"; }
     std::string history_path() const { return campaign_dir_ + "/history.json"; }
+    std::string metadata_path() const { return campaign_dir_ + "/metadata.json"; }
 
     void create_dirs(const std::string& path);
 };

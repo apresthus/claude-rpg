@@ -3,10 +3,47 @@
 #include "../util/file_utils.h"
 #include <fstream>
 #include <algorithm>
+#include <random>
+#include <ctime>
+#include <dirent.h>
+#include <sys/stat.h>
 
 namespace rpg {
 
-Routes::Routes() : context_("campaigns/active") {}
+Routes::Routes() {
+    // Ensure campaigns directory exists
+    mkdir(CAMPAIGNS_DIR, 0755);
+
+    // Load roleplays index
+    auto roleplays = read_roleplays_index();
+
+    // Find active roleplay or create default
+    std::string active_id;
+    std::string index_content = file::read_file(INDEX_FILE);
+    if (!index_content.empty()) {
+        active_id = std::string(json::extract_string(index_content, "activeId"));
+    }
+
+    if (active_id.empty() && !roleplays.empty()) {
+        active_id = roleplays[0].id;
+    }
+
+    if (active_id.empty()) {
+        // No roleplays exist - create a default one
+        active_id = generate_roleplay_id();
+        std::string dir = roleplay_dir(active_id);
+        context_ = std::make_unique<ContextManager>(dir);
+        context_->init_new_campaign("New Roleplay", "Player", "Participant");
+
+        // Save to index
+        RoleplayInfo info = read_roleplay_metadata(active_id);
+        info.id = active_id;
+        roleplays.push_back(info);
+        save_roleplays_index(roleplays);
+    } else {
+        load_roleplay(active_id);
+    }
+}
 
 void Routes::set_cors_headers(httplib::Response& res) {
     res.set_header("Access-Control-Allow-Origin", "*");
@@ -28,7 +65,7 @@ std::string Routes::build_character_json(const Character& c) const {
     j.kv_string("doesntKnow", c.doesnt_know);
     j.kv_string("imagePath", c.image_path);
     // Add image URL if exists
-    std::string img_path = context_.get_image_path("characters", c.id);
+    std::string img_path = context_->get_image_path("characters", c.id);
     if (!img_path.empty()) {
         j.kv_string("imageUrl", "/api/images/characters/" + c.id);
     }
@@ -48,7 +85,7 @@ std::string Routes::build_location_json(const Location& loc) const {
     j.kv_string("notableFeatures", loc.notable_features);
     j.kv_string("npcsPresent", loc.npcs_present);
     j.kv_string("imagePath", loc.image_path);
-    std::string img_path = context_.get_image_path("locations", loc.id);
+    std::string img_path = context_->get_image_path("locations", loc.id);
     if (!img_path.empty()) {
         j.kv_string("imageUrl", "/api/images/locations/" + loc.id);
     }
@@ -96,8 +133,8 @@ void Routes::handle_message(const httplib::Request& req, httplib::Response& res)
         return;
     }
 
-    std::string system_prompt = context_.get_system_prompt();
-    std::string context = context_.build_full_context();
+    std::string system_prompt = context_->get_system_prompt();
+    std::string context = context_->build_full_context();
     std::string full_prompt = system_prompt + "\n\n" + context + "\n\nPlayer says: " + std::string(message);
 
     auto response = claude_.send_message(system_prompt, full_prompt);
@@ -114,8 +151,8 @@ void Routes::handle_message(const httplib::Request& req, httplib::Response& res)
 
     std::string narrative = parser_.extract_narrative(response.content);
     auto updates = parser_.extract_updates(response.content);
-    context_.apply_updates(updates);
-    context_.append_history(std::string(message), narrative);
+    context_->apply_updates(updates);
+    context_->append_history(std::string(message), narrative);
 
     json::JsonBuilder result;
     result.begin_object();
@@ -129,13 +166,13 @@ void Routes::handle_message(const httplib::Request& req, httplib::Response& res)
 
 void Routes::handle_get_player(const httplib::Request&, httplib::Response& res) {
     set_cors_headers(res);
-    std::string player_md = context_.get_player_state();
+    std::string player_md = context_->get_player_state();
 
     json::JsonBuilder result;
     result.begin_object();
     result.kv_string("content", player_md);
     // Add image URL if exists
-    std::string img_path = context_.get_image_path("player", "avatar");
+    std::string img_path = context_->get_image_path("player", "avatar");
     if (!img_path.empty()) {
         result.kv_string("imageUrl", "/api/images/player/avatar");
     }
@@ -154,7 +191,7 @@ void Routes::handle_update_player(const httplib::Request& req, httplib::Response
         return;
     }
 
-    context_.save_player_state(std::string(content));
+    context_->save_player_state(std::string(content));
     res.set_content(R"({"success":true})", "application/json");
 }
 
@@ -170,7 +207,7 @@ void Routes::handle_add_note(const httplib::Request& req, httplib::Response& res
 
     std::vector<ContextUpdate> updates;
     updates.push_back({"player.md", "\n- " + std::string(note)});
-    context_.apply_updates(updates);
+    context_->apply_updates(updates);
 
     res.set_content(R"({"success":true})", "application/json");
 }
@@ -188,7 +225,7 @@ void Routes::handle_player_image(const httplib::Request& req, httplib::Response&
     }
 
     std::string mime = mime_type.empty() ? "image/png" : std::string(mime_type);
-    bool saved = context_.save_image("player", "avatar", std::string(image_data), mime);
+    bool saved = context_->save_image("player", "avatar", std::string(image_data), mime);
 
     if (saved) {
         json::JsonBuilder result;
@@ -206,7 +243,7 @@ void Routes::handle_player_image(const httplib::Request& req, httplib::Response&
 void Routes::handle_new_campaign(const httplib::Request& req, httplib::Response& res) {
     set_cors_headers(res);
 
-    (void)json::extract_string(req.body, "campaignName");
+    auto campaign_name = json::extract_string(req.body, "campaignName");
     auto player_name = json::extract_string(req.body, "playerName");
     auto player_role = json::extract_string(req.body, "playerRole");
 
@@ -215,14 +252,40 @@ void Routes::handle_new_campaign(const httplib::Request& req, httplib::Response&
         player_role = json::extract_string(req.body, "playerClass");
     }
 
-    context_.init_new_campaign(std::string(player_name), std::string(player_role));
+    // Update lastPlayed on current roleplay before creating new
+    if (context_) {
+        context_->update_last_played();
+    }
 
-    res.set_content(R"({"success":true})", "application/json");
+    // Create new roleplay
+    std::string new_id = generate_roleplay_id();
+    std::string dir = roleplay_dir(new_id);
+    context_ = std::make_unique<ContextManager>(dir);
+    context_->init_new_campaign(
+        campaign_name.empty() ? "New Roleplay" : std::string(campaign_name),
+        player_name.empty() ? "Player" : std::string(player_name),
+        player_role.empty() ? "Participant" : std::string(player_role)
+    );
+    current_roleplay_id_ = new_id;
+
+    // Update index
+    auto roleplays = read_roleplays_index();
+    save_roleplays_index(roleplays);
+
+    // Return the new roleplay info
+    RoleplayInfo info = read_roleplay_metadata(new_id);
+    json::JsonBuilder result;
+    result.begin_object();
+    result.kv_string("success", "true");
+    result.key("roleplay");
+    result.value_raw(build_roleplay_json(info));
+    result.end_object();
+    res.set_content(result.str(), "application/json");
 }
 
 void Routes::handle_get_history(const httplib::Request&, httplib::Response& res) {
     set_cors_headers(res);
-    std::string history = context_.get_history();
+    std::string history = context_->get_history();
     if (history.empty()) history = "[]";
     res.set_content(history, "application/json");
 }
@@ -232,7 +295,7 @@ void Routes::handle_get_history(const httplib::Request&, httplib::Response& res)
 void Routes::handle_get_characters(const httplib::Request&, httplib::Response& res) {
     set_cors_headers(res);
 
-    std::string md = context_.get_characters();
+    std::string md = context_->get_characters();
     auto chars = md_parser_.parse_characters(md);
 
     json::JsonBuilder result;
@@ -249,7 +312,7 @@ void Routes::handle_get_character(const httplib::Request& req, httplib::Response
     set_cors_headers(res);
 
     std::string id = req.matches[1];
-    std::string md = context_.get_characters();
+    std::string md = context_->get_characters();
     auto chars = md_parser_.parse_characters(md);
 
     auto found = md_parser_.find_character(chars, id);
@@ -272,7 +335,7 @@ void Routes::handle_create_character(const httplib::Request& req, httplib::Respo
         return;
     }
 
-    std::string md = context_.get_characters();
+    std::string md = context_->get_characters();
     auto chars = md_parser_.parse_characters(md);
 
     // Check for duplicate
@@ -283,7 +346,7 @@ void Routes::handle_create_character(const httplib::Request& req, httplib::Respo
     }
 
     chars.push_back(c);
-    context_.save_characters(md_parser_.serialize_characters(chars));
+    context_->save_characters(md_parser_.serialize_characters(chars));
 
     res.set_content(build_character_json(c), "application/json");
 }
@@ -292,7 +355,7 @@ void Routes::handle_update_character(const httplib::Request& req, httplib::Respo
     set_cors_headers(res);
 
     std::string id = req.matches[1];
-    std::string md = context_.get_characters();
+    std::string md = context_->get_characters();
     auto chars = md_parser_.parse_characters(md);
 
     auto it = std::find_if(chars.begin(), chars.end(),
@@ -309,7 +372,7 @@ void Routes::handle_update_character(const httplib::Request& req, httplib::Respo
     if (updated.name.empty()) updated.name = it->name;
     *it = updated;
 
-    context_.save_characters(md_parser_.serialize_characters(chars));
+    context_->save_characters(md_parser_.serialize_characters(chars));
     res.set_content(build_character_json(updated), "application/json");
 }
 
@@ -317,7 +380,7 @@ void Routes::handle_delete_character(const httplib::Request& req, httplib::Respo
     set_cors_headers(res);
 
     std::string id = req.matches[1];
-    std::string md = context_.get_characters();
+    std::string md = context_->get_characters();
     auto chars = md_parser_.parse_characters(md);
 
     auto it = std::find_if(chars.begin(), chars.end(),
@@ -330,7 +393,7 @@ void Routes::handle_delete_character(const httplib::Request& req, httplib::Respo
     }
 
     chars.erase(it);
-    context_.save_characters(md_parser_.serialize_characters(chars));
+    context_->save_characters(md_parser_.serialize_characters(chars));
 
     res.set_content(R"({"success":true})", "application/json");
 }
@@ -340,7 +403,7 @@ void Routes::handle_delete_character(const httplib::Request& req, httplib::Respo
 void Routes::handle_get_locations(const httplib::Request&, httplib::Response& res) {
     set_cors_headers(res);
 
-    std::string md = context_.get_locations();
+    std::string md = context_->get_locations();
     auto locs = md_parser_.parse_locations(md);
 
     json::JsonBuilder result;
@@ -357,7 +420,7 @@ void Routes::handle_get_location(const httplib::Request& req, httplib::Response&
     set_cors_headers(res);
 
     std::string id = req.matches[1];
-    std::string md = context_.get_locations();
+    std::string md = context_->get_locations();
     auto locs = md_parser_.parse_locations(md);
 
     auto found = md_parser_.find_location(locs, id);
@@ -380,7 +443,7 @@ void Routes::handle_create_location(const httplib::Request& req, httplib::Respon
         return;
     }
 
-    std::string md = context_.get_locations();
+    std::string md = context_->get_locations();
     auto locs = md_parser_.parse_locations(md);
 
     if (md_parser_.find_location(locs, loc.id)) {
@@ -390,7 +453,7 @@ void Routes::handle_create_location(const httplib::Request& req, httplib::Respon
     }
 
     locs.push_back(loc);
-    context_.save_locations(md_parser_.serialize_locations(locs));
+    context_->save_locations(md_parser_.serialize_locations(locs));
 
     res.set_content(build_location_json(loc), "application/json");
 }
@@ -399,7 +462,7 @@ void Routes::handle_update_location(const httplib::Request& req, httplib::Respon
     set_cors_headers(res);
 
     std::string id = req.matches[1];
-    std::string md = context_.get_locations();
+    std::string md = context_->get_locations();
     auto locs = md_parser_.parse_locations(md);
 
     auto it = std::find_if(locs.begin(), locs.end(),
@@ -416,7 +479,7 @@ void Routes::handle_update_location(const httplib::Request& req, httplib::Respon
     if (updated.name.empty()) updated.name = it->name;
     *it = updated;
 
-    context_.save_locations(md_parser_.serialize_locations(locs));
+    context_->save_locations(md_parser_.serialize_locations(locs));
     res.set_content(build_location_json(updated), "application/json");
 }
 
@@ -424,7 +487,7 @@ void Routes::handle_delete_location(const httplib::Request& req, httplib::Respon
     set_cors_headers(res);
 
     std::string id = req.matches[1];
-    std::string md = context_.get_locations();
+    std::string md = context_->get_locations();
     auto locs = md_parser_.parse_locations(md);
 
     auto it = std::find_if(locs.begin(), locs.end(),
@@ -437,7 +500,7 @@ void Routes::handle_delete_location(const httplib::Request& req, httplib::Respon
     }
 
     locs.erase(it);
-    context_.save_locations(md_parser_.serialize_locations(locs));
+    context_->save_locations(md_parser_.serialize_locations(locs));
 
     res.set_content(R"({"success":true})", "application/json");
 }
@@ -466,7 +529,7 @@ void Routes::handle_generate_character(const httplib::Request& req, httplib::Res
     }
 
     // Include world context
-    std::string world_context = file::read_file(context_.campaign_dir() + "/context.md");
+    std::string world_context = file::read_file(context_->campaign_dir() + "/context.md");
     if (!world_context.empty()) {
         prompt += "Current world context:\n" + world_context + "\n\n";
     }
@@ -538,7 +601,7 @@ void Routes::handle_generate_location(const httplib::Request& req, httplib::Resp
         prompt += "Existing location details:\n" + std::string(existing) + "\n\n";
     }
 
-    std::string world_context = file::read_file(context_.campaign_dir() + "/context.md");
+    std::string world_context = file::read_file(context_->campaign_dir() + "/context.md");
     if (!world_context.empty()) {
         prompt += "Current world context:\n" + world_context + "\n\n";
     }
@@ -616,7 +679,7 @@ void Routes::handle_generate_image(const httplib::Request& req, httplib::Respons
     // If category and id provided, save the image
     std::string image_url;
     if (!category.empty() && !id.empty()) {
-        bool saved = context_.save_image(std::string(category), std::string(id),
+        bool saved = context_->save_image(std::string(category), std::string(id),
                                           response.image_data, response.mime_type);
         if (saved) {
             image_url = "/api/images/" + std::string(category) + "/" + std::string(id);
@@ -641,7 +704,7 @@ void Routes::handle_get_image(const httplib::Request& req, httplib::Response& re
     std::string category = req.matches[1];
     std::string id = req.matches[2];
 
-    std::string path = context_.get_image_path(category, id);
+    std::string path = context_->get_image_path(category, id);
     if (path.empty()) {
         res.status = 404;
         res.set_content("Image not found", "text/plain");
@@ -668,6 +731,234 @@ void Routes::handle_get_image(const httplib::Request& req, httplib::Response& re
                         std::istreambuf_iterator<char>());
 
     res.set_content(content, content_type);
+}
+
+// Roleplay helper methods
+
+std::string Routes::generate_roleplay_id() {
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    static std::uniform_int_distribution<> dis(0, 15);
+    static const char* hex = "0123456789abcdef";
+
+    std::string id = "rp_";
+    for (int i = 0; i < 8; ++i) {
+        id += hex[dis(gen)];
+    }
+    return id;
+}
+
+std::string Routes::roleplay_dir(const std::string& id) const {
+    return std::string(CAMPAIGNS_DIR) + "/" + id;
+}
+
+void Routes::load_roleplay(const std::string& id) {
+    current_roleplay_id_ = id;
+    context_ = std::make_unique<ContextManager>(roleplay_dir(id));
+}
+
+void Routes::save_roleplays_index(const std::vector<RoleplayInfo>& roleplays) {
+    json::JsonBuilder j;
+    j.begin_object();
+    j.kv_string("activeId", current_roleplay_id_);
+    j.key("roleplays");
+    j.begin_array();
+    for (const auto& rp : roleplays) {
+        j.value_raw(build_roleplay_json(rp));
+    }
+    j.end_array();
+    j.end_object();
+    file::write_file(INDEX_FILE, j.str());
+}
+
+std::vector<RoleplayInfo> Routes::read_roleplays_index() {
+    std::vector<RoleplayInfo> result;
+
+    // Scan campaigns directory for roleplay folders
+    DIR* dir = opendir(CAMPAIGNS_DIR);
+    if (!dir) return result;
+
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        std::string name = entry->d_name;
+        if (name.rfind("rp_", 0) == 0) {  // Starts with "rp_"
+            std::string meta_path = std::string(CAMPAIGNS_DIR) + "/" + name + "/metadata.json";
+            std::string meta = file::read_file(meta_path);
+            if (!meta.empty()) {
+                RoleplayInfo info;
+                info.id = name;
+                info.name = std::string(json::extract_string(meta, "name"));
+                info.playerName = std::string(json::extract_string(meta, "playerName"));
+                info.playerRole = std::string(json::extract_string(meta, "playerRole"));
+                info.created = std::string(json::extract_string(meta, "created"));
+                info.lastPlayed = std::string(json::extract_string(meta, "lastPlayed"));
+                result.push_back(info);
+            }
+        }
+    }
+    closedir(dir);
+
+    // Sort by lastPlayed descending
+    std::sort(result.begin(), result.end(),
+              [](const RoleplayInfo& a, const RoleplayInfo& b) {
+                  return a.lastPlayed > b.lastPlayed;
+              });
+
+    return result;
+}
+
+RoleplayInfo Routes::read_roleplay_metadata(const std::string& id) {
+    RoleplayInfo info;
+    info.id = id;
+
+    std::string meta_path = roleplay_dir(id) + "/metadata.json";
+    std::string meta = file::read_file(meta_path);
+    if (!meta.empty()) {
+        info.name = std::string(json::extract_string(meta, "name"));
+        info.playerName = std::string(json::extract_string(meta, "playerName"));
+        info.playerRole = std::string(json::extract_string(meta, "playerRole"));
+        info.created = std::string(json::extract_string(meta, "created"));
+        info.lastPlayed = std::string(json::extract_string(meta, "lastPlayed"));
+    }
+    return info;
+}
+
+std::string Routes::build_roleplay_json(const RoleplayInfo& info) const {
+    json::JsonBuilder j;
+    j.begin_object();
+    j.kv_string("id", info.id);
+    j.kv_string("name", info.name);
+    j.kv_string("playerName", info.playerName);
+    j.kv_string("playerRole", info.playerRole);
+    j.kv_string("created", info.created);
+    j.kv_string("lastPlayed", info.lastPlayed);
+    j.end_object();
+    return j.str();
+}
+
+// Roleplay handlers
+
+void Routes::handle_get_roleplays(const httplib::Request&, httplib::Response& res) {
+    set_cors_headers(res);
+
+    auto roleplays = read_roleplays_index();
+
+    json::JsonBuilder result;
+    result.begin_array();
+    for (const auto& rp : roleplays) {
+        result.value_raw(build_roleplay_json(rp));
+    }
+    result.end_array();
+
+    res.set_content(result.str(), "application/json");
+}
+
+void Routes::handle_create_roleplay(const httplib::Request& req, httplib::Response& res) {
+    set_cors_headers(res);
+
+    auto name = json::extract_string(req.body, "name");
+    auto playerName = json::extract_string(req.body, "playerName");
+    auto playerRole = json::extract_string(req.body, "playerRole");
+
+    if (name.empty()) {
+        res.status = 400;
+        res.set_content(R"({"error":"Missing roleplay name"})", "application/json");
+        return;
+    }
+
+    // Update lastPlayed on current roleplay before switching
+    if (context_) {
+        context_->update_last_played();
+    }
+
+    // Generate new ID and create roleplay
+    std::string new_id = generate_roleplay_id();
+    std::string dir = roleplay_dir(new_id);
+    context_ = std::make_unique<ContextManager>(dir);
+    context_->init_new_campaign(
+        std::string(name),
+        playerName.empty() ? "Player" : std::string(playerName),
+        playerRole.empty() ? "Participant" : std::string(playerRole)
+    );
+    current_roleplay_id_ = new_id;
+
+    // Update index
+    auto roleplays = read_roleplays_index();
+    save_roleplays_index(roleplays);
+
+    // Return the new roleplay info
+    RoleplayInfo info = read_roleplay_metadata(new_id);
+    res.set_content(build_roleplay_json(info), "application/json");
+}
+
+void Routes::handle_load_roleplay(const httplib::Request& req, httplib::Response& res) {
+    set_cors_headers(res);
+
+    std::string id = req.matches[1];
+
+    // Verify roleplay exists
+    std::string meta_path = roleplay_dir(id) + "/metadata.json";
+    if (file::read_file(meta_path).empty()) {
+        res.status = 404;
+        res.set_content(R"({"error":"Roleplay not found"})", "application/json");
+        return;
+    }
+
+    // Update lastPlayed on current roleplay before switching
+    if (context_) {
+        context_->update_last_played();
+    }
+
+    // Load the new roleplay
+    load_roleplay(id);
+    context_->update_last_played();
+
+    // Update index with new active ID
+    auto roleplays = read_roleplays_index();
+    save_roleplays_index(roleplays);
+
+    RoleplayInfo info = read_roleplay_metadata(id);
+    res.set_content(build_roleplay_json(info), "application/json");
+}
+
+void Routes::handle_delete_roleplay(const httplib::Request& req, httplib::Response& res) {
+    set_cors_headers(res);
+
+    std::string id = req.matches[1];
+
+    // Can't delete current roleplay
+    if (id == current_roleplay_id_) {
+        res.status = 400;
+        res.set_content(R"({"error":"Cannot delete active roleplay"})", "application/json");
+        return;
+    }
+
+    // Verify roleplay exists
+    std::string dir = roleplay_dir(id);
+    std::string meta_path = dir + "/metadata.json";
+    if (file::read_file(meta_path).empty()) {
+        res.status = 404;
+        res.set_content(R"({"error":"Roleplay not found"})", "application/json");
+        return;
+    }
+
+    // Delete the directory (recursively)
+    // Simple recursive delete using system command
+    std::string cmd = "rm -rf \"" + dir + "\"";
+    system(cmd.c_str());
+
+    // Update index
+    auto roleplays = read_roleplays_index();
+    save_roleplays_index(roleplays);
+
+    res.set_content(R"({"success":true})", "application/json");
+}
+
+void Routes::handle_get_current_roleplay(const httplib::Request&, httplib::Response& res) {
+    set_cors_headers(res);
+
+    RoleplayInfo info = read_roleplay_metadata(current_roleplay_id_);
+    res.set_content(build_roleplay_json(info), "application/json");
 }
 
 }

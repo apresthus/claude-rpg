@@ -35,8 +35,17 @@ export interface PlayerState {
   imageUrl?: string;
 }
 
+export interface RoleplayInfo {
+  id: string;
+  name: string;
+  playerName?: string;
+  playerRole?: string;
+  created: string;
+  lastPlayed: string;
+}
+
 export interface GameState {
-  campaignName: string;
+  currentRoleplay: RoleplayInfo | null;
   messages: Message[];
   playerState: PlayerState;
   isLoading: boolean;

@@ -3,6 +3,7 @@
 #include "../util/json.h"
 #include <sys/stat.h>
 #include <cstring>
+#include <ctime>
 #include <fstream>
 
 namespace rpg {
@@ -77,7 +78,39 @@ void ContextManager::apply_updates(const std::vector<ContextUpdate>& updates) {
     }
 }
 
-void ContextManager::init_new_campaign(const std::string& player_name,
+std::string ContextManager::get_metadata() const {
+    return file::read_file(metadata_path());
+}
+
+void ContextManager::save_metadata(const std::string& json_content) {
+    file::write_file(metadata_path(), json_content);
+}
+
+void ContextManager::update_last_played() {
+    std::string meta = get_metadata();
+    if (meta.empty()) return;
+
+    // Get current ISO timestamp
+    auto now = std::time(nullptr);
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&now));
+    std::string timestamp(buf);
+
+    // Find and replace lastPlayed value
+    size_t pos = meta.find("\"lastPlayed\"");
+    if (pos != std::string::npos) {
+        size_t colon = meta.find(':', pos);
+        size_t quote1 = meta.find('"', colon);
+        size_t quote2 = meta.find('"', quote1 + 1);
+        if (quote1 != std::string::npos && quote2 != std::string::npos) {
+            meta.replace(quote1 + 1, quote2 - quote1 - 1, timestamp);
+            save_metadata(meta);
+        }
+    }
+}
+
+void ContextManager::init_new_campaign(const std::string& roleplay_name,
+                                        const std::string& player_name,
                                         const std::string& player_role) {
     // Create images directories
     create_dirs(images_dir() + "/characters");
@@ -158,6 +191,22 @@ The story begins...
 
     // Initialize empty history
     file::write_file(history_path(), "[]");
+
+    // Initialize metadata.json
+    auto now = std::time(nullptr);
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&now));
+    std::string timestamp(buf);
+
+    json::JsonBuilder meta;
+    meta.begin_object();
+    meta.kv_string("name", roleplay_name);
+    meta.kv_string("playerName", player_name);
+    meta.kv_string("playerRole", player_role);
+    meta.kv_string("created", timestamp);
+    meta.kv_string("lastPlayed", timestamp);
+    meta.end_object();
+    file::write_file(metadata_path(), meta.str());
 }
 
 void ContextManager::append_history(const std::string& player_input,

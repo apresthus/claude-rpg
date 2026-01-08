@@ -9,6 +9,7 @@ import {
   Location,
   GeneratedContent,
   GeneratedImage,
+  RoleplayInfo,
 } from '../types/game';
 
 const API_BASE = '/api';
@@ -188,22 +189,86 @@ export const useApi = () => {
     }
   }, []);
 
-  // Campaign management
+  // Campaign management (legacy)
   const createCampaign = useCallback(
-    async (campaignName: string, playerName: string, playerRole: string): Promise<boolean> => {
+    async (campaignName: string, playerName: string, playerRole: string): Promise<RoleplayInfo | null> => {
       try {
         const response = await fetch(`${API_BASE}/campaign/new`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ campaignName, playerName, playerRole }),
         });
-        return response.ok;
+        if (!response.ok) return null;
+        const data = await response.json();
+        return data.roleplay || null;
       } catch {
-        return false;
+        return null;
       }
     },
     []
   );
+
+  // Roleplay management
+  const getRoleplays = useCallback(async (): Promise<RoleplayInfo[]> => {
+    try {
+      const response = await fetch(`${API_BASE}/roleplays`);
+      if (!response.ok) return [];
+      const data = await response.json();
+      return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const getCurrentRoleplay = useCallback(async (): Promise<RoleplayInfo | null> => {
+    try {
+      const response = await fetch(`${API_BASE}/roleplay/current`);
+      if (!response.ok) return null;
+      return await response.json();
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const createRoleplay = useCallback(
+    async (name: string, playerName: string, playerRole: string): Promise<RoleplayInfo | null> => {
+      try {
+        const response = await fetch(`${API_BASE}/roleplays`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, playerName, playerRole }),
+        });
+        if (!response.ok) return null;
+        return await response.json();
+      } catch {
+        return null;
+      }
+    },
+    []
+  );
+
+  const loadRoleplay = useCallback(async (id: string): Promise<RoleplayInfo | null> => {
+    try {
+      const response = await fetch(`${API_BASE}/roleplays/${id}/load`, {
+        method: 'PUT',
+      });
+      if (!response.ok) return null;
+      return await response.json();
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const deleteRoleplay = useCallback(async (id: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`${API_BASE}/roleplays/${id}`, {
+        method: 'DELETE',
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }, []);
 
   // Characters CRUD
   const getCharacters = useCallback(async (): Promise<Character[]> => {
@@ -388,8 +453,14 @@ export const useApi = () => {
     updatePlayerState,
     addNote,
     uploadPlayerImage,
-    // Campaign
+    // Campaign (legacy)
     createCampaign,
+    // Roleplays
+    getRoleplays,
+    getCurrentRoleplay,
+    createRoleplay,
+    loadRoleplay,
+    deleteRoleplay,
     // Characters
     getCharacters,
     getCharacter,
